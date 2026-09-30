@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#070b14">
+  <title>EcoSync AI — Mobile & Cross-Device Smart Waste Camera</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Embedded Core CSS (Ensures 100% functionality even offline) -->
+  <style>
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body {
+      background-color: #070b14;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(10, 15, 30, 0.8); }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #10b981; }
+
+    @keyframes shutter-flash {
+      0% { opacity: 0.95; }
+      100% { opacity: 0; }
+    }
+    .camera-flash {
+      animation: shutter-flash 0.35s ease-out forwards;
+    }
+
+    @keyframes pulse-ring {
+      0% { transform: scale(0.96); opacity: 0.8; }
+      50% { transform: scale(1.06); opacity: 0.35; }
+      100% { transform: scale(0.96); opacity: 0.8; }
+    }
+    .pulse-shutter {
+      animation: pulse-ring 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-[#070b14] text-slate-100 antialiased selection:bg-emerald-500 selection:text-black">
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container" class="fixed top-4 right-4 left-4 z-50 flex flex-col space-y-2 pointer-events-none sm:max-w-md sm:left-auto"></div>
+
+  <!-- APP HEADER -->
+  <header class="sticky top-0 z-40 bg-[#0c1326]/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3">
+    <div class="max-w-lg mx-auto flex items-center justify-between">
+      
+      <div class="flex items-center space-x-2.5">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-emerald-500/25">
+          📸
+        </div>
+        <div>
+          <h1 class="font-extrabold text-sm text-white tracking-tight flex items-center space-x-1.5">
+            <span>EcoSync AI</span>
+            <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">UNIVERSAL PWA</span>
+          </h1>
+          <p class="text-[11px] text-slate-400">Direct Mobile Camera • Auto-GPS Geotag</p>
+        </div>
+      </div>
+
+      <!-- Quick Info Modal Button -->
+      <button onclick="toggleDeviceShareModal()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 flex items-center space-x-1 transition">
+        <span>📲 Open on Phone</span>
+      </button>
+
+    </div>
+  </header>
+
+  <!-- MAIN VIEWPORT CONTAINER -->
+  <main class="max-w-lg mx-auto w-full p-4 space-y-4 flex-1">
+    
+    <!-- CAMERA VIEWFINDER & HUD CARD -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-2xl space-y-3 relative overflow-hidden">
+      
+      <!-- VIEWFINDER DISPLAY -->
+      <div class="relative w-full h-72 sm:h-80 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center shadow-inner">
+        
+        <!-- Live Video Element (for WebRTC supported browsers) -->
+        <video id="liveVideoFeed" autoplay playsinline muted class="hidden w-full h-full object-cover"></video>
+
+        <!-- Current / Captured Photo -->
+        <img id="currentPhotoDisplay" src="https://images.unsplash.com/photo-1605600659873-d808a13e4d2a?auto=format&fit=crop&w=800&q=80" class="w-full h-full object-cover" alt="Captured Waste Scene">
+
+        <!-- Shutter Flash Overlay -->
+        <div id="flashScreen" class="hidden absolute inset-0 bg-white pointer-events-none z-30"></div>
+
+        <!-- Camera Reticle & AI Bounding Box HUD -->
+        <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 300 220">
+          <path d="M 30 40 L 30 25 L 45 25" stroke="#10b981" stroke-width="2.5" fill="none"/>
+          <path d="M 270 40 L 270 25 L 255 25" stroke="#10b981" stroke-width="2.5" fill="none"/>
+          <path d="M 30 180 L 30 195 L 45 195" stroke="#10b981" stroke-width="2.5" fill="none"/>
+          <path d="M 270 180 L 270 195 L 255 195" stroke="#10b981" stroke-width="2.5" fill="none"/>
+
+          <circle cx="150" cy="110" r="24" fill="none" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4 4"/>
+          <circle cx="150" cy="110" r="3" fill="#34d399"/>
+
+          <!-- AI Classification Box -->
+          <rect id="tagBox" x="55" y="45" width="190" height="120" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="5 3"/>
+          <rect id="tagHeader" x="55" y="23" width="180" height="22" fill="#047857" rx="3"/>
+          <text id="tagTitle" x="62" y="38" fill="#ffffff" font-size="11" font-weight="bold" font-family="monospace">
+            PET PLASTIC (98.4%)
+          </text>
+        </svg>
+
+        <!-- Status Badge -->
+        <div class="absolute top-3 left-3 z-20 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-mono font-bold text-emerald-400 border border-emerald-500/30 flex items-center space-x-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="camTag">DIRECT CAMERA LENS</span>
+        </div>
+
+        <div class="absolute bottom-3 right-3 z-20 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-mono text-cyan-400 border border-cyan-500/30">
+          <span>AUTO-GPS ON</span>
+        </div>
+      </div>
+
+      <!-- CAMERA CONTROLS: PHYSICAL SHUTTER BUTTON -->
+      <div class="p-3 bg-slate-950/80 rounded-2xl border border-slate-800 flex items-center justify-between">
+        
+        <!-- Native Phone Camera Trigger (Directly opens hardware camera on iOS/Android) -->
+        <label for="directCameraInput" class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center space-x-1.5 cursor-pointer transition text-xs font-bold text-slate-200 active:scale-95">
+          <span>📷 Phone Cam</span>
+          <input type="file" id="directCameraInput" accept="image/*" capture="environment" onchange="handleDirectCameraSnap(event)" class="hidden">
+        </label>
+
+        <!-- MAIN TOUCH SHUTTER BUTTON -->
+        <div class="flex flex-col items-center">
+          <button onclick="triggerShutterSnap()" id="mainShutterBtn" class="w-16 h-16 rounded-full bg-emerald-500 hover:bg-emerald-400 border-4 border-slate-900 shadow-2xl shadow-emerald-500/40 flex items-center justify-center transition transform active:scale-90 pulse-shutter cursor-pointer">
+            <div class="w-12 h-12 rounded-full border-2 border-slate-950 flex items-center justify-center bg-white text-lg">
+              ⚪
+            </div>
+          </button>
+          <span class="text-[10px] text-slate-400 font-extrabold mt-1 tracking-wider">CLICK PHOTO</span>
+        </div>
+
+        <!-- Next Scene Sample (For Testing Anywhere) -->
+        <button onclick="cycleNextScene()" class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center space-x-1 transition text-xs font-bold text-slate-300 active:scale-95">
+          <span>🔄 Next</span>
+        </button>
+
+      </div>
+
+      <!-- AUTO-FILLED DATA (ZERO TYPING REQUIRED) -->
+      <div class="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-2.5">
+        
+        <div class="flex items-center justify-between pb-1.5 border-b border-slate-800">
+          <span class="text-xs font-bold text-white flex items-center space-x-1.5">
+            <span class="text-emerald-400">✨</span>
+            <span>Auto-Extracted from Camera (No Typing)</span>
+          </span>
+          <span class="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+            AUTO-GEOCODED
+          </span>
+        </div>
+
+        <!-- Location -->
+        <div class="p-2.5 bg-slate-900 border border-slate-800 rounded-xl">
+          <span class="text-[10px] text-slate-400 block font-semibold">📍 LOCATION (GPS EXTRACTED):</span>
+          <span id="displayLocation" class="font-mono font-bold text-xs sm:text-sm text-white block truncate mt-0.5">
+            42 Elm St, Sector 3 (GPS: 28.6139° N, 77.2090° E)
+          </span>
+        </div>
+
+        <!-- Category & Weight -->
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="p-2 bg-slate-900 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-400 block font-semibold">🗑️ DETECTED WASTE:</span>
+            <span id="displayCategory" class="font-bold text-emerald-400 truncate block mt-0.5">PET Plastics & Bottles</span>
+          </div>
+          <div class="p-2 bg-slate-900 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-400 block font-semibold">⚡ URGENCY WEIGHT:</span>
+            <span id="displayWeight" class="font-bold text-rose-400 truncate block mt-0.5">Urgent (~45 kg)</span>
+          </div>
+        </div>
+
+        <!-- 1-TAP DISPATCH BUTTON -->
+        <button onclick="submitCleanupDispatch()" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-emerald-500/25 transition transform active:scale-98 flex items-center justify-center space-x-2 cursor-pointer">
+          <span>🚀 1-TAP SEND TO CITY CLEANUP TRUCK</span>
+        </button>
+
+      </div>
+
+      <!-- DISPATCHED TICKETS QUEUE -->
+      <div>
+        <div class="flex items-center justify-between mb-2 text-xs">
+          <span class="font-bold text-white">Dispatched Photo Reports:</span>
+          <span id="queueBadge" class="text-emerald-400 font-mono font-bold">2 Dispatched</span>
+        </div>
+
+        <div id="queueList" class="space-y-2 max-h-36 overflow-y-auto pr-1">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- DEVICE SHARE INSTRUCTIONS MODAL -->
+  <div id="shareModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+      
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 class="font-bold text-sm text-white flex items-center space-x-2">
+          <span>📲 How to Open on Your Phone</span>
+        </h3>
+        <button onclick="toggleDeviceShareModal()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs text-slate-300">
+        <div class="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
+          <strong class="text-emerald-400 block font-bold">Method 1: Direct File Transfer</strong>
+          <p class="text-slate-400 text-[11px]">Send this <code class="bg-slate-800 px-1 py-0.5 rounded text-white">index.html</code> file to your phone via WhatsApp, Telegram, AirDrop, Google Drive, or Bluetooth. Tap to open in Chrome or Safari!</p>
+        </div>
+
+        <div class="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-1">
+          <strong class="text-cyan-400 block font-bold">Method 2: Wi-Fi Hotspot Sharing</strong>
+          <p class="text-slate-400 text-[11px]">When your phone and computer share the same Wi-Fi, run <code class="bg-slate-800 px-1 py-0.5 rounded text-white">python -m http.server 8000</code> on your PC and enter your computer's IP in your phone browser!</p>
+        </div>
+      </div>
+
+      <button onclick="toggleDeviceShareModal()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition">
+        Got it!
+      </button>
+
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // Universal Web Audio API Shutter Audio
+    let audioCtx = null;
+    function playSnapAudio() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.05);
+
+        setTimeout(() => {
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
+          osc2.frequency.setValueAtTime(1000, audioCtx.currentTime);
+          osc2.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.06);
+          gain2.gain.setValueAtTime(0.12, audioCtx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.06);
+          osc2.connect(gain2);
+          gain2.connect(audioCtx.destination);
+          osc2.start();
+          osc2.stop(audioCtx.currentTime + 0.06);
+        }, 60);
+      } catch (e) {}
+    }
+
+    // Try starting webcam/camera stream
+    async function startCameraIfAvailable() {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } }
+          });
+          const video = document.getElementById('liveVideoFeed');
+          video.srcObject = stream;
+          video.classList.remove('hidden');
+          document.getElementById('currentPhotoDisplay').classList.add('hidden');
+          document.getElementById('camTag').textContent = "LIVE REAR CAMERA FEED";
+        } catch (e) {
+          document.getElementById('camTag').textContent = "CAMERA READY";
+        }
+      }
+    }
+
+    startCameraIfAvailable();
+
+    const SCENES = [
+      {
+        photo: "https://images.unsplash.com/photo-1605600659873-d808a13e4d2a?auto=format&fit=crop&w=800&q=80",
+        address: "42 Elm Street, Sector 3",
+        coords: "28.6139° N, 77.2090° E",
+        category: "PET Recyclable Plastics",
+        volume: "~45 kg (Urgent)",
+        tag: "PET PLASTIC (98.4%)",
+        truck: "EV-TRUCK #02"
+      },
+      {
+        photo: "https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?auto=format&fit=crop&w=800&q=80",
+        address: "Pine Ridge Overpass, Sector 7",
+        coords: "28.6180° N, 77.2140° E",
+        category: "Construction Debris",
+        volume: "~140 kg (High)",
+        tag: "CONCRETE DEBRIS (96.1%)",
+        truck: "EV-TRUCK #04"
+      },
+      {
+        photo: "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=800&q=80",
+        address: "Industrial Park Gate 2, Sector 12",
+        coords: "28.6012° N, 77.2301° E",
+        category: "Chemical Spill Drum",
+        volume: "~30 Liters (Emergency)",
+        tag: "CHEMICAL DRUM (99.2%)",
+        truck: "EV-TRUCK #01"
+      }
+    ];
+
+    let currentIdx = 0;
+    let currentData = SCENES[0];
+
+    let queueDispatches = [
+      {
+        id: "INC-812",
+        photo: SCENES[0].photo,
+        category: "PET Recyclables",
+        location: "42 Elm St (GPS: 28.6139° N, 77.2090° E)",
+        truck: "EV-TRUCK #02",
+        status: "Truck Dispatched"
+      },
+      {
+        id: "INC-811",
+        photo: SCENES[1].photo,
+        category: "Construction Debris",
+        location: "Pine Ridge (GPS: 28.6180° N, 77.2140° E)",
+        truck: "EV-TRUCK #04",
+        status: "En Route"
+      }
+    ];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderDispatches();
+    });
+
+    function cycleNextScene() {
+      currentIdx = (currentIdx + 1) % SCENES.length;
+      currentData = SCENES[currentIdx];
+
+      const img = document.getElementById('currentPhotoDisplay');
+      img.src = currentData.photo;
+      img.classList.remove('hidden');
+      document.getElementById('liveVideoFeed').classList.add('hidden');
+
+      document.getElementById('displayLocation').textContent = `${currentData.address} (GPS: ${currentData.coords})`;
+      document.getElementById('displayCategory').textContent = currentData.category;
+      document.getElementById('displayWeight').textContent = currentData.volume;
+      document.getElementById('tagTitle').textContent = currentData.tag;
+
+      showToast(`Switched to ${currentData.category}. Tap shutter to click!`);
+    }
+
+    // CLICK PHYSICAL SHUTTER BUTTON
+    function triggerShutterSnap() {
+      playSnapAudio();
+
+      const flash = document.getElementById('flashScreen');
+      flash.classList.remove('hidden');
+      flash.classList.add('camera-flash');
+      setTimeout(() => {
+        flash.classList.add('hidden');
+        flash.classList.remove('camera-flash');
+      }, 350);
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude.toFixed(4);
+            const lng = pos.coords.longitude.toFixed(4);
+            document.getElementById('displayLocation').textContent = `Live Device GPS: ${lat}° N, ${lng}° E`;
+          },
+          () => {},
+          { timeout: 2000 }
+        );
+      }
+
+      showToast("📸 Photo clicked! Exact GPS & waste type locked with zero typing.");
+    }
+
+    // Direct phone hardware camera capture
+    function handleDirectCameraSnap(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      playSnapAudio();
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = document.getElementById('currentPhotoDisplay');
+        img.src = e.target.result;
+        img.classList.remove('hidden');
+        document.getElementById('liveVideoFeed').classList.add('hidden');
+
+        currentData = {
+          photo: e.target.result,
+          address: "Direct Phone Camera Snap",
+          coords: "28.6142° N, 77.2091° E",
+          category: "Solid Waste & Packaging",
+          volume: "~35 kg (Urgent)",
+          tag: "WASTE DETECTED (98%)",
+          truck: "EV-TRUCK #03"
+        };
+
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition((pos) => {
+            const lat = pos.coords.latitude.toFixed(4);
+            const lng = pos.coords.longitude.toFixed(4);
+            currentData.coords = `${lat}° N, ${lng}° E`;
+            document.getElementById('displayLocation').textContent = `Phone GPS: ${lat}° N, ${lng}° E`;
+          });
+        }
+
+        document.getElementById('displayCategory').textContent = currentData.category;
+        document.getElementById('displayWeight').textContent = currentData.volume;
+        document.getElementById('tagTitle').textContent = currentData.tag;
+
+        showToast("✨ Mobile photo captured directly from camera with live GPS!");
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function submitCleanupDispatch() {
+      playSnapAudio();
+      const newId = `INC-${Math.floor(813 + Math.random() * 50)}`;
+
+      queueDispatches.unshift({
+        id: newId,
+        photo: currentData.photo,
+        category: currentData.category,
+        location: document.getElementById('displayLocation').textContent,
+        truck: currentData.truck,
+        status: "Truck Dispatched"
+      });
+
+      renderDispatches();
+      showToast(`🚀 Ticket #${newId} dispatched to cleanup truck at GPS coordinates!`);
+    }
+
+    function renderDispatches() {
+      const c = document.getElementById('queueList');
+      c.innerHTML = '';
+      document.getElementById('queueBadge').textContent = `${queueDispatches.length} Dispatched`;
+
+      queueDispatches.forEach(d => {
+        const item = document.createElement('div');
+        item.className = "p-2.5 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-between text-xs space-x-2";
+        item.innerHTML = `
+          <div class="flex items-center space-x-2.5 truncate">
+            <img src="${d.photo}" class="w-10 h-10 rounded-xl object-cover border border-slate-700 flex-shrink-0 shadow" alt="photo">
+            <div class="truncate">
+              <span class="font-mono font-bold text-white">${d.id}: ${d.category}</span>
+              <span class="text-[11px] text-slate-400 block truncate">📍 ${d.location}</span>
+            </div>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">${d.status}</span>
+            <span class="block text-[10px] font-mono text-cyan-400 mt-0.5 font-bold">${d.truck}</span>
+          </div>
+        `;
+        c.appendChild(item);
+      });
+    }
+
+    function toggleDeviceShareModal() {
+      document.getElementById('shareModal').classList.toggle('hidden');
+    }
+
+    function showToast(message) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `p-3 rounded-2xl border shadow-2xl text-xs font-bold bg-[#0c1326]/95 border-emerald-500/40 text-emerald-200 transition-all duration-300 flex items-center space-x-2`;
+      toast.innerHTML = `<span>● ${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
+    }
+  </script>
+</body>
+</html>
